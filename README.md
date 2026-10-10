@@ -59,7 +59,9 @@ Decimal('23.72')
 INVALID (cemac)
   [PROFILE_CURRENCY] ID 53: cemac permits only currency 950; found '156'
   [PROFILE_COUNTRY] ID 58: cemac permits only country codes CM, CF, CG, GA, GQ, TD; found 'CN'
-  [NOT CHECKED] the Globally Unique Identifier allocated to CEMAC participants…
+  [CEMAC_DATA_MISSING] ID 50: the CEMAC profile requires the CEMAC payment system
+    data object (ID 50) inside the Additional Data Field Template (ID 62); it is absent
+  [NOT CHECKED] the Globally Unique Identifier for the Merchant Account Information…
 ```
 
 Building a merchant code:
@@ -75,6 +77,7 @@ qr = (
     .reusable(True)  # omit .amount() and the consumer enters it
     .bill_number("F-2026-0001")
     .account("26", gui="…", merchant_pan="2376000000001")
+    .cemac_data(member="31003", account_alias="10790001", notify="https://akwa.cm/pmt/t01")
     .build()
 )
 print(qr)  # the payload string
@@ -96,6 +99,7 @@ qr = (
     .category("5462")
     .currency(CEMAC_CURRENCY)  # « 950 » — le code numérique, jamais « XAF »
     .account("26", gui="…", merchant_pan="2376000000001")
+    .cemac_data(member="31003", notify="https://akwa.cm/pmt/t01")
     .build()
 )
 
@@ -105,7 +109,10 @@ print(validate(qr, CEMAC))  # ce qui est vérifié, et ce qui ne peut pas l'êtr
 ⚠️ **Le point à retenir : le contrôle d'intégrité est un CRC 16 bits**
 (polynôme `0x1021`, valeur initiale `0xFFFF`), **pas un CRC-32**. Plusieurs
 descriptions publiées du QR CEMAC annoncent un « CRC-32 » : un code construit
-d'après elles sera rejeté par tous les lecteurs de la zone.
+d'après elles sera rejeté par tous les lecteurs de la zone. La norme CORENOFI
+elle-même tranche — « conformément à [ISO/CEI 13239] en utilisant le polynôme
+'1021' (hex) et la valeur initiale 'FFFF' (hex) » — et son propre exemple
+reproduit `3FD3` sous cet algorithme.
 
 ## Command line
 
@@ -137,26 +144,47 @@ Against the base EMVCo profile:
   and the `A`/`M`/`E` characters of the Additional Consumer Data Request
 - IDs `65`–`79` are Reserved for Future Use and shall not appear
 
-Against the CEMAC profile, additionally: currency `950` and one of the six member
-state codes.
+Against the CEMAC profile, additionally, all read from the CORENOFI norm
+*Spécifications du QR code pour l'acceptation des paiements interopérables dans la
+CEMAC*, v2.1 (March 2025):
+
+- currency `950` and one of the six member state codes
+- the CEMAC payment system data object (ID `50`) inside template `62` is
+  **mandatory**, and is itself a template — a payload without it is well-formed
+  EMVCo and not a CEMAC QR code
+- inside ID `50`, only IDs `00`–`03` are defined
+- IDs `6251` and `6252`, present in the pre-homologation draft, were deleted
 
 ## What is **not** checked, and why that is stated out loud
 
-The CEMAC regulation's technical annex is not public. An outside implementation
-therefore cannot know:
+The CORENOFI norm is readable; the text homologated on 8 April 2026 is not. Two
+things therefore cannot be settled from the outside:
 
-- the Globally Unique Identifier allocated to CEMAC participants
-- the merchant identifier scheme, if there is one beyond the EMVCo Merchant PAN
-- which optional EMVCo objects CEMAC makes mandatory
-- whether CEMAC adds a checksum beyond the EMVCo CRC, or merely restates it
+- the Globally Unique Identifier for the Merchant Account Information template —
+  the norm's Annex 4 example carries `0012 A15600000000`, while its Tableau 17
+  shows `0014 A0000006561010`. The document disagrees with itself, so neither is
+  enforced
+- whether the version homologated in April 2026 differs from the v2.1 text of
+  March 2025 that is readable today
 
 So `validate(..., CEMAC)` reports `VALID, SUBJECT TO UNCHECKED RULES` rather than
 a bare `True`, and `.fully_checked` is `False`. A validator that returns success
-for a payload it only partially examined is worse than no validator.
+for a payload it only partially examined is worse than no validator. The residual
+unknowns are listed in `cemacqr.CEMAC.undefined`.
 
-If you are at GIMAC, the BEAC, or a participant institution and can supply the
-annex, the gap closes in one edit — the missing elements are listed in
-`cemacqr.CEMAC.undefined`.
+### The norm's own example fails the norm's own currency rule
+
+Annex 4 of the norm ends with the clear-text value of a merchant-presented QR
+code, checksum included. Its prose says *"Devise : XAF (FCFA)"*; its normative
+table for Transaction Currency says *"La valeur applicable doit toujours être 950
+(Valeur numérique à 3 chiffres du FCFA en Afrique Centrale -XAF-)"*; and the
+example encodes `5303 952`. **952 is XOF**, the West African franc of the UEMOA.
+The Central African franc is 950.
+
+This library enforces the table, not the example, and the disagreement is pinned
+in `tests/test_corenofi_example.py` rather than smoothed over. The checksum in
+that same example *is* reproduced by this library, which is what makes the reading
+trustworthy: `scripts/check_corenofi_example.py` recomputes `3FD3`.
 
 ## Design notes
 
@@ -187,18 +215,22 @@ take the parent, and there is a test for exactly this.
 
 ## Test suite
 
-255 tests, no network, no fixtures on disk. The anchor is the specification's own
-Annex B.7 example, transcribed from the hex dump in the document — the only test
-vector here that is not something I constructed.
+272 tests, no network, no fixtures on disk. Two anchors, and they are the only
+vectors here that are not something I constructed:
+
+- EMV QRCPS v1.1 Annex B.7, transcribed from the hex dump in the specification
+- the CORENOFI norm's Annex 4 example, whose published checksum this library
+  recomputes
 
 ```bash
 python -m pytest
+python scripts/check_corenofi_example.py
 ```
 
 ## Status
 
-Version 0.1.0. The EMVCo layer is complete and tested. The CEMAC-specific layer
-is partial by necessity, and says so.
+Version 0.1.1. The EMVCo layer is complete and tested. The CEMAC layer covers
+what the CORENOFI norm states and declares the two things it cannot settle.
 
 ## Sources
 
@@ -206,6 +238,9 @@ is partial by necessity, and says so.
   (EMVCo, 27 November 2020) — public access at
   <https://www.emvco.com/emv-technologies/qr-codes/>
 - *EMV QR Code Specification for Payment Systems — Consumer-Presented Mode*, v1.1
+- *Spécifications du QR code pour l'acceptation des paiements interopérables dans
+  la CEMAC*, CORENOFI, v2.1, March 2025 — the norm whose Annex 4 example is tested
+  here, and whose Tableau 15 makes ID `6250` mandatory
 - *Règlement n° 02/26/CEMAC/UMAC/CORENOFI du 8 avril 2026* homologating the norms
   for the QR code, the automated bill of exchange and the direct debit
 - BEAC / GIMAC launch of the common QR code, Douala, 29 July 2026

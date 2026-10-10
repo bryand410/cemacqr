@@ -8,14 +8,15 @@ is worse than no validator at all.
 
 The CEMAC profile here is the honest version of that idea. The QR code was
 homologated by *Règlement n° 02/26/CEMAC/UMAC/CORENOFI du 8 avril 2026* and
-launched in Douala on 29 July 2026. The regulation's technical annex is not
-public. So this profile enforces exactly the constraints that are verifiable
-from the EMVCo specification and the published CEMAC facts, and raises
-:class:`~cemacqr.errors.ProfileIncomplete` for the rest rather than guessing.
+launched in Douala on 29 July 2026. The regulation itself is not published, but
+the underlying CORENOFI norm — *Spécifications du QR code pour l'acceptation des
+paiements interopérables dans la CEMAC*, v2.1, March 2025 — is readable, and its
+Annex 4 example reproduces under this library's checksum. So the profile enforces
+what that norm states, and raises
+:class:`~cemacqr.errors.ProfileIncomplete` for the little it does not.
 
-If you work for GIMAC, the BEAC, or a participant institution and can supply the
-annex, the gap closes in one edit: the missing elements are listed in
-:attr:`Profile.undefined`.
+If you hold the text homologated on 8 April 2026, compare it against v2.1 and the
+gap closes: the residual unknowns are listed in :attr:`Profile.undefined`.
 """
 
 from __future__ import annotations
@@ -79,21 +80,34 @@ CEMAC = Profile(
     title="QR Code communautaire CEMAC",
     currencies=(CEMAC_CURRENCY,),
     countries=CEMAC_COUNTRIES,
-    legal_basis="Règlement n° 02/26/CEMAC/UMAC/CORENOFI du 8 avril 2026",
+    legal_basis=(
+        "Règlement n° 02/26/CEMAC/UMAC/CORENOFI du 8 avril 2026 ; norme CORENOFI "
+        "« Spécifications du QR code pour l'acceptation des paiements interopérables "
+        "dans la CEMAC », v2.1, mars 2025"
+    ),
     notes=(
         "Homologated 8 April 2026, launched 29 July 2026 in Douala. Built on "
         "EMV QRCPS v1.1 and ISO/IEC 18004, TLV-encoded. Interbank routing and "
         "clearing are performed by GIMAC. Applies to banks, microfinance "
         "institutions, payment institutions and electronic-money issuers in "
         "Cameroun, the Central African Republic, Congo, Gabon, Equatorial "
-        "Guinea and Chad."
+        "Guinea and Chad. "
+        "Three overlays on EMVCo are enforced, all read from the CORENOFI norm: "
+        "the CEMAC payment system data object (ID 50) inside template 62 is "
+        "mandatory and is itself a template; IDs 6251 and 6252, present in the "
+        "pre-homologation draft, are deleted; and the checksum is EMVCo's, "
+        "restated rather than extended — ISO/IEC 13239, polynomial 0x1021, "
+        "initial value 0xFFFF, four uppercase hexadecimal characters. The norm's "
+        "own Annex 4 example reproduces to 3FD3 under that algorithm; see "
+        "scripts/check_corenofi_example.py."
     ),
     undefined=(
-        "the Globally Unique Identifier allocated to CEMAC participants in the "
-        "Merchant Account Information template (IDs 26-51)",
-        "the merchant identifier scheme, if the regulation defines one beyond the EMVCo Merchant PAN",
-        "the subset of optional EMVCo data objects the regulation makes mandatory for CEMAC acceptance",
-        "whether CEMAC adds a checksum beyond the EMVCo CRC, or merely restates it",
+        "the Globally Unique Identifier for the Merchant Account Information "
+        "template: the norm's Annex 4 example carries 0012 A15600000000, while "
+        "its Tableau 17 shows 0014 A0000006561010. The document disagrees with "
+        "itself, so neither is enforced",
+        "whether the version of the norm homologated on 8 April 2026 differs "
+        "from the v2.1 text of March 2025 that is readable today",
     ),
 )
 

@@ -35,6 +35,7 @@ from . import tags as _tags
 from .payload import EmvQr, build
 from .profile import CEMAC_CURRENCY
 from .tlv import Tlv
+from .tlv import encode as _encode
 
 __all__ = ["MerchantQr"]
 
@@ -212,9 +213,42 @@ class MerchantQr:
 
     def additional(self, tag: str, value: str) -> MerchantQr:
         """Set any data object inside the Additional Data Field Template (62)."""
-        if _tags.resolve(_tags.TEMPLATE_ADDITIONAL_DATA, tag) is None:
+        known = _tags.resolve(_tags.TEMPLATE_ADDITIONAL_DATA, tag) or _tags.resolve(
+            _tags.TEMPLATE_ADDITIONAL_DATA, tag, "cemac"
+        )
+        if known is None:
             raise ValueError("ID %r is not defined in the Additional Data Field Template; see cemacqr.tags" % (tag,))
         self._additional[tag] = value
+        return self
+
+    def cemac_data(
+        self,
+        *,
+        payment_system: Optional[str] = None,
+        member: Optional[str] = None,
+        account_alias: Optional[str] = None,
+        notify: Optional[str] = None,
+    ) -> MerchantQr:
+        """Set the CEMAC payment system data object (ID 50) inside template 62.
+
+        The CORENOFI norm makes this object mandatory for CEMAC acceptance, and
+        it is a template rather than a value — which is why it needs its own
+        method instead of :meth:`additional`, which takes a flat string.
+
+        ``notify`` is the *système à notifier*: an acquirer system URL, or a
+        reference to one, that is called when the funds reach the merchant's
+        account. It is what lets a terminal close a payment without polling.
+        """
+        fields = {
+            "00": payment_system,
+            "01": member,
+            "02": account_alias,
+            "03": notify,
+        }
+        children = "".join(_encode(tag, value) for tag, value in fields.items() if value is not None)
+        if not children:
+            raise ValueError("cemac_data needs at least one of payment_system, member, account_alias or notify")
+        self._additional[_tags.TEMPLATE_CEMAC_DATA] = children
         return self
 
     def prompt_consumer_for(self, *tags: str) -> MerchantQr:

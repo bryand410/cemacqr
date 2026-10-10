@@ -22,10 +22,13 @@ from typing import Dict, Optional, Tuple
 
 __all__ = [
     "ADDITIONAL_DATA_FIELD",
+    "ADDITIONAL_DATA_FIELD_CEMAC",
+    "CEMAC_PAYMENT_SYSTEM_DATA",
     "LANGUAGE_TEMPLATE",
     "MERCHANT_ACCOUNT_INFO",
     "ROOT",
     "TEMPLATE_ADDITIONAL_DATA",
+    "TEMPLATE_CEMAC_DATA",
     "TEMPLATE_CRC",
     "TEMPLATE_LANGUAGE",
     "TagSpec",
@@ -38,6 +41,7 @@ __all__ = [
 TEMPLATE_ADDITIONAL_DATA = "62"
 TEMPLATE_CRC = "63"
 TEMPLATE_LANGUAGE = "64"
+TEMPLATE_CEMAC_DATA = "50"
 
 _FORMAT_NUMERIC = "N"
 _FORMAT_ALNUM_SPECIAL = "ans"
@@ -102,6 +106,43 @@ ADDITIONAL_DATA_FIELD: Dict[str, TagSpec] = {
     "11": _spec("11", "Merchant Channel", _FORMAT_ALNUM_SPECIAL, 3, _PRESENCE_OPTIONAL),
 }
 
+#: The CEMAC overlay on Table 3.7, transcribed from the CORENOFI norm
+#: *Spécifications du QR code pour l'acceptation des paiements interopérables
+#: dans la CEMAC*, v2.1 (March 2025), Tableau 15.
+#:
+#: Three differences from EMVCo matter, and none of them is guessable:
+#:
+#: * ID ``50`` is **mandatory** and is itself a template. EMVCo leaves the range
+#:   50-99 reserved; CEMAC allocates 50 to *données spécifiques aux systèmes de
+#:   paiement CEMAC*, and the norm's own example carries it.
+#: * IDs ``51`` to ``80`` are reserved for the CEMAC regional scheme, so a
+#:   conforming payload may not put arbitrary content there.
+#: * IDs ``12`` to ``49`` remain reserved for EMVCo, as in EMVCo.
+#:
+#: The norm's revision table also records that IDs ``6251`` and ``6252``, present
+#: in the earlier draft, were **deleted** in v2.1 in favour of ID 50. Payloads
+#: carrying them are pre-homologation.
+ADDITIONAL_DATA_FIELD_CEMAC: Dict[str, TagSpec] = dict(ADDITIONAL_DATA_FIELD)
+ADDITIONAL_DATA_FIELD_CEMAC[TEMPLATE_CEMAC_DATA] = _spec(
+    TEMPLATE_CEMAC_DATA,
+    "Données spécifiques aux systèmes de paiement CEMAC",
+    _FORMAT_STRING,
+    99,
+    _PRESENCE_MANDATORY,
+    True,
+)
+
+#: Tableau 18-B — data objects valid inside ID ``50``, which is a template in its
+#: own right. ID ``03`` is the *système à notifier*: an acquirer system URL, or a
+#: reference to one, called when the funds reach the merchant's account. It is the
+#: object that lets a terminal close a payment without polling.
+CEMAC_PAYMENT_SYSTEM_DATA: Dict[str, TagSpec] = {
+    "00": _spec("00", "PN-UID — identifiant du système de paiement", _FORMAT_ALNUM_SPECIAL, 26, _PRESENCE_OPTIONAL),
+    "01": _spec("01", "Identifiant de l'entité membre participante", _FORMAT_ALNUM_SPECIAL, 6, _PRESENCE_OPTIONAL),
+    "02": _spec("02", "Alias du compte du commerçant", _FORMAT_ALNUM_SPECIAL, 26, _PRESENCE_OPTIONAL),
+    "03": _spec("03", "Système à notifier", _FORMAT_ALNUM_SPECIAL, 99, _PRESENCE_OPTIONAL),
+}
+
 #: Table 3.8 — data objects valid inside the Merchant Information—Language Template (ID "64").
 LANGUAGE_TEMPLATE: Dict[str, TagSpec] = {
     "00": _spec("00", "Language Preference", _FORMAT_ALNUM_SPECIAL, 2, _PRESENCE_MANDATORY),
@@ -128,12 +169,18 @@ _MAI_ALLOCATION: Tuple[Tuple[int, int, str], ...] = (
 )
 
 
-def resolve(parent: Optional[str], tag: str) -> Optional[TagSpec]:
+def resolve(parent: Optional[str], tag: str, scheme: str = "emvco") -> Optional[TagSpec]:
     """Look up ``tag`` in the context of ``parent``.
 
     ``parent=None`` means the root. Returns ``None`` when the ID is not defined
     in that context — which is a fact about the payload, not an error, and the
     caller decides what to do with it.
+
+    ``scheme`` selects the overlay. ``"emvco"`` is the bare specification;
+    ``"cemac"`` additionally defines ID 50 inside template 62, and reads IDs 51
+    to 80 of that template as reserved for the CEMAC regional scheme rather than
+    for other players. The two differ only inside template 62, which is why this
+    is a parameter and not a second registry.
     """
     if parent is None:
         if tag in ROOT:
@@ -153,13 +200,16 @@ def resolve(parent: Optional[str], tag: str) -> Optional[TagSpec]:
             return TagSpec(tag, "Unreserved Template", _FORMAT_STRING, 99, _PRESENCE_OPTIONAL, True)
         return None
 
-    table = {
-        TEMPLATE_ADDITIONAL_DATA: ADDITIONAL_DATA_FIELD,
-        TEMPLATE_LANGUAGE: LANGUAGE_TEMPLATE,
-    }.get(parent)
+    if parent == TEMPLATE_ADDITIONAL_DATA:
+        if scheme == "cemac":
+            return ADDITIONAL_DATA_FIELD_CEMAC.get(tag)
+        return ADDITIONAL_DATA_FIELD.get(tag)
 
-    if table is not None:
-        return table.get(tag)
+    if parent == TEMPLATE_CEMAC_DATA:
+        return CEMAC_PAYMENT_SYSTEM_DATA.get(tag)
+
+    if parent == TEMPLATE_LANGUAGE:
+        return LANGUAGE_TEMPLATE.get(tag)
 
     if parent.isdigit() and 26 <= int(parent) <= 51:
         return MERCHANT_ACCOUNT_INFO.get(tag)

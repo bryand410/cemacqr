@@ -25,6 +25,10 @@ def minimal(**overrides):
         "58": "CM",
         "59": "MERCHANT",
         "60": "DOUALA",
+        # Template 62 carrying the CEMAC payment system data object (ID 50).
+        # Since the CORENOFI norm makes 6250 mandatory, a CEMAC payload without
+        # it is not a CEMAC payload.
+        "62": "50070303T01",
     }
     objects.update(overrides)
     return build([Tlv(tag, value) for tag, value in objects.items() if value is not None])
@@ -254,12 +258,28 @@ class TestProfiles:
 
     def test_the_cemac_profile_declares_what_it_cannot_check(self):
         # This is the design decision that matters: an outside implementation
-        # cannot know the CEMAC-specific GUI, so it must say so rather than
-        # return a bare pass.
+        # cannot resolve the CEMAC GUI, because the norm states two different
+        # ones, so the profile must say so rather than return a bare pass.
         report = validate(minimal(), CEMAC)
         assert report.ok is True
         assert report.fully_checked is False
         assert len(report.unchecked) >= 1
+
+    def test_the_cemac_profile_requires_the_cemac_data_object(self):
+        report = validate(minimal(**{"62": None}), CEMAC)
+        assert "CEMAC_DATA_MISSING" in [item.code for item in report.violations]
+
+    def test_the_cemac_data_object_must_be_a_template(self):
+        # ID 50 carries a Tag-Length-Value structure, not a flat string.
+        report = validate(minimal(**{"62": "5004nope"}), CEMAC)
+        assert "CEMAC_DATA_MALFORMED" in [item.code for item in report.violations]
+
+    def test_an_undefined_object_inside_the_cemac_data_object_is_reported(self):
+        # Tableau 18-B defines IDs 00 to 03; ID 09 is not one of them. The inner
+        # value "0901X" parses cleanly as one object, so this is an unknown
+        # object rather than a malformed one.
+        report = validate(minimal(**{"62": "50050901X"}), CEMAC)
+        assert "CEMAC_DATA_UNKNOWN_OBJECT" in [item.code for item in report.violations]
 
     def test_the_status_never_overstates_a_partial_check(self):
         assert validate(minimal(), CEMAC).status == "VALID, SUBJECT TO UNCHECKED RULES"

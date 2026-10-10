@@ -208,9 +208,17 @@ class TestOutput:
         assert report.ok is True, str(report)
 
     def test_it_satisfies_the_cemac_profile_rules_that_are_checkable(self):
-        report = validate(base().build(), CEMAC)
+        qr = base().cemac_data(member="31003", notify="https://akwa.cm/pmt/t01").build()
+        report = validate(qr, CEMAC)
         assert report.ok is True, str(report)
         assert report.fully_checked is False
+
+    def test_the_cemac_profile_refuses_a_payload_without_the_cemac_data_object(self):
+        # The CORENOFI norm marks ID 50 as mandatory, so the builder's default
+        # output is a valid EMVCo code and not a valid CEMAC one.
+        assert validate(base().build(), EMVCO).ok is True
+        codes = [item.code for item in validate(base().build(), CEMAC).violations]
+        assert "CEMAC_DATA_MISSING" in codes
 
     def test_the_checksum_is_correct(self):
         assert base().build().crc_ok is True

@@ -32,7 +32,12 @@ def spec_payload() -> str:
 
 @pytest.fixture
 def cemac_qr() -> MerchantQr:
-    """A plausible CEMAC merchant: Douala bakery, CFA franc, reusable code."""
+    """A plausible CEMAC merchant: Douala bakery, CFA franc, reusable code.
+
+    It carries the CEMAC payment system data object (ID 50), because the
+    CORENOFI norm makes it mandatory — a payload without it is well-formed
+    EMVCo and not a CEMAC QR code.
+    """
     return (
         MerchantQr()
         .merchant(name="BOULANGERIE AKWA", city="Douala", country="CM")
@@ -40,4 +45,5 @@ def cemac_qr() -> MerchantQr:
         .currency("950")
         .reusable(True)
         .account("26", gui="com.example.cemac", merchant_pan="2376000000001")
+        .cemac_data(member="31003", account_alias="10790001", notify="https://akwa.cm/pmt/t01")
     )

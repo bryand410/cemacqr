@@ -53,7 +53,7 @@ from .tags import TagSpec, resolve
 from .tlv import Tlv, encode, parse_tlv
 from .validate import ValidationReport, Violation, prompt_requested, validate
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "__version__",

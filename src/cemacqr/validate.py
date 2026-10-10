@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from . import tags as _tags
+from . import tlv as _tlv
 from .errors import ProfileIncomplete
 from .payload import PAYLOAD_FORMAT_VERSION, EmvQr
 from .profile import EMVCO, Profile
@@ -201,10 +202,11 @@ def _check_tip(payload: EmvQr) -> List[Violation]:
     return found
 
 
-def _check_additional_data(payload: EmvQr) -> List[Violation]:
-    """Table 3.7 constraints inside template 62."""
+def _check_additional_data(payload: EmvQr, profile: Profile) -> List[Violation]:
+    """Table 3.7 constraints inside template 62, plus the profile's overlay."""
     found: List[Violation] = []
     children = payload.template(_tags.TEMPLATE_ADDITIONAL_DATA)
+    scheme = profile.name
 
     request = children.get("09")
     if request is not None:
@@ -236,12 +238,63 @@ def _check_additional_data(payload: EmvQr) -> List[Violation]:
     if channel is not None and len(channel) != 3:
         found.append(Violation("MERCHANT_CHANNEL_LENGTH", "Merchant Channel shall be exactly 3 characters", "11"))
 
+    # -- CEMAC overlay ---------------------------------------------------
+    if scheme == "cemac":
+        # The CORENOFI norm, Tableau 15, marks ID 50 as M: a payload without it
+        # is not CEMAC-conforming, however well-formed it is as EMVCo.
+        if _tags.TEMPLATE_CEMAC_DATA not in children:
+            found.append(
+                Violation(
+                    "CEMAC_DATA_MISSING",
+                    "the CEMAC profile requires the CEMAC payment system data object (ID 50) "
+                    "inside the Additional Data Field Template (ID 62); it is absent",
+                    _tags.TEMPLATE_CEMAC_DATA,
+                )
+            )
+        else:
+            found.extend(_check_cemac_data(children[_tags.TEMPLATE_CEMAC_DATA]))
+
     for tag, value in children.items():
-        spec = _tags.resolve(_tags.TEMPLATE_ADDITIONAL_DATA, tag)
+        spec = _tags.resolve(_tags.TEMPLATE_ADDITIONAL_DATA, tag, scheme)
         if spec is not None:
             issue = _length_violation(spec, value)
             if issue is not None:
                 found.append(issue)
+
+    return found
+
+
+def _check_cemac_data(value: str) -> List[Violation]:
+    """Tableau 18-B constraints inside ID 50, which is a template of its own."""
+    found: List[Violation] = []
+    try:
+        children = _tlv.parse(value)
+    except Exception:
+        found.append(
+            Violation(
+                "CEMAC_DATA_MALFORMED",
+                "the CEMAC payment system data object (ID 50) is a template and its value does "
+                "not parse as Tag-Length-Value data",
+                _tags.TEMPLATE_CEMAC_DATA,
+            )
+        )
+        return found
+
+    for child in children:
+        spec = _tags.resolve(_tags.TEMPLATE_CEMAC_DATA, child.tag)
+        if spec is None:
+            found.append(
+                Violation(
+                    "CEMAC_DATA_UNKNOWN_OBJECT",
+                    "ID %s is not defined inside the CEMAC payment system data object; "
+                    "Tableau 18-B defines IDs 00 to 03" % (child.tag,),
+                    _tags.TEMPLATE_CEMAC_DATA,
+                )
+            )
+            continue
+        issue = _length_violation(spec, child.value)
+        if issue is not None:
+            found.append(issue)
 
     return found
 
@@ -418,7 +471,7 @@ def validate(payload: EmvQr, profile: Profile = EMVCO) -> ValidationReport:
             violations.append(issue)
 
     violations.extend(_check_tip(payload))
-    violations.extend(_check_additional_data(payload))
+    violations.extend(_check_additional_data(payload, profile))
     violations.extend(_check_language_template(payload))
 
     # -- profile constraints ---------------------------------------------
