@@ -58,21 +58,13 @@ jobs:
         run: PYTHONPATH=src python -S -c "import cemacqr; print(cemacqr.__version__)"
 
       - name: Assert the wheel declares no dependencies
+        # This used to re-implement the check inline, and drifted: the inline
+        # version counted the `dev` extra as a runtime dependency. The script is
+        # the single definition, so the job calls it.
         run: |
-          # --no-isolation skips the build backend download, so hatchling has to
-          # be present already. Installing it here keeps the build offline-fast
-          # and makes the failure mode explicit rather than a resolution error.
-          python -m pip install --quiet build hatchling
-          python -m build --no-isolation
-          python - <<'PY'
-          import glob, zipfile
-          wheel = glob.glob("dist/*.whl")[0]
-          metadata = [n for n in zipfile.ZipFile(wheel).namelist() if n.endswith("METADATA")][0]
-          text = zipfile.ZipFile(wheel).read(metadata).decode()
-          requires = [l for l in text.splitlines() if l.startswith("Requires-Dist")]
-          print("Requires-Dist entries:", requires or "(none)")
-          assert not requires, "the wheel declares runtime dependencies"
-          PY
+          python -m pip install --quiet build
+          python -m build
+          python scripts/check_wheel.py dist
 
   package:
     name: Build and inspect the distribution
