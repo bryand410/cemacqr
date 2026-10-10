@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cemacqr"
+version = "0.1.0"
+description = "Build, read and check the CEMAC common QR code (EMV QRCPS v1.1), with no dependencies"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Ulrich Bryand Tamouffe Teyo" }]
+keywords = [
+    "cemac",
+    "beac",
+    "gimac",
+    "qr",
+    "emvco",
+    "qrcps",
+    "payments",
+    "africa",
+    "interoperability",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff~=0.17.0"]
+
+[project.scripts]
+cemacqr = "cemacqr.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/bryand410/cemacqr"
+Issues = "https://github.com/bryand410/cemacqr/issues"
+Changelog = "https://github.com/bryand410/cemacqr/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cemacqr"]
+
+# The EMVCo specifications kept under docs/reference are development references
+# only. EMVCo's own notice permits reproduction "only pursuant to the applicable
+# agreement between the user and EMVCo", so they are never redistributed.
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "pyproject.toml"]
+exclude = ["docs/reference"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    # PEP 604 unions and PEP 585 generics need Python 3.10; the floor here is 3.9.
+    "UP006",
+    "UP007",
+    "UP035",
+    "UP045",
+    # `%` formatting is used consistently across the package. The format string
+    # sits next to the values it consumes, which is what makes the TLV
+    # construction sites readable, and the operator is not deprecated. Rewriting
+    # sixty call sites to f-strings would be churn with no behavioural change.
+    "UP031",
+    # Domain exceptions are named for the domain concept: a caller writes
+    # `except ProfileIncomplete`, and "ProfileIncompleteError" reads worse for
+    # no gain. The base class is `CemacQrError`, so `except CemacQrError` works
+    # as a catch-all.
+    "N818",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+# The public `__all__` is grouped by concern with headings rather than sorted
+# alphabetically, because for a library whose whole point is a specific
+# checksum, the grouping *is* the documentation.
+"src/cemacqr/__init__.py" = ["RUF022"]
