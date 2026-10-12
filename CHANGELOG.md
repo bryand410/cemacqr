@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-10-12
+
+Packaging metadata only. No API change.
+
+### Fixed
+
+- The licence is now declared as the SPDX expression `Apache-2.0` (PEP 639)
+  instead of `license = { file = "LICENSE" }`. The old form copied the entire
+  Apache text into the `License` metadata field, so PyPI rendered that wall of
+  text on the project page rather than naming the licence. The metadata now
+  carries `License-Expression: Apache-2.0`, and `license-files` still ships the
+  full text inside the distribution.
+- The now-redundant `License :: OSI Approved :: Apache Software License`
+  classifier was removed, since PEP 639 treats it as a second, weaker statement
+  of the same fact.
+
 ## [0.1.1] — 2026-10-10
 
 The CEMAC layer, after reading the CORENOFI norm.
